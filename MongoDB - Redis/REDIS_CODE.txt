@@ -1,0 +1,241 @@
+# setting up the connection with Redis
+r <- redux::hiredis(
+  redux::redis_config(
+    host = "127.0.0.1", 
+    port = "6379"))
+
+
+emails_sent <-read.csv2("C:\\Users\\elgr9\\OneDrive\\Desktop\\Redis_Assignments\\RECORDED_ACTIONS\\emails_sent.csv", sep = ",")
+View(emails_sent)
+
+listings <- read.csv2("C:\\Users\\elgr9\\OneDrive\\Desktop\\Redis_Assignments\\RECORDED_ACTIONS\\modified_listings.csv",sep = ",")
+View(listings)
+
+#################### QUESTION 1.1###########################################
+
+January <- subset(listings,listings$MonthID==1)
+February<- subset(listings,listings$MonthID==2)
+March <- subset(listings,listings$MonthID==3)
+
+for (i in 1:nrow(January)){
+  if (January$ModifiedListing[i] == 1) {
+    r$SETBIT("ModificationsJanuary", i,"1")
+  }
+}
+r$BITCOUNT("ModificationsJanuary") # 9969
+
+#### for the 1.6 question ####
+
+for (i in 1:nrow(February)){
+  if (February$ModifiedListing[i] == 1) {
+    r$SETBIT("ModificationsFebruary", i,"1")
+  }
+}
+r$BITCOUNT("ModificationsFebruary") # 10007
+
+
+for (i in 1:nrow(March)){
+  if (March$ModifiedListing[i] == 1) {
+    r$SETBIT("ModificationsMarch", i,"1")
+  }
+}
+r$BITCOUNT("ModificationsMarch") #9991
+
+#### QUESTION 1.2 ########################################################
+
+
+r$BITOP("NOT",'noModificationsJanuary',"ModificationsJanuary") 
+r$BITCOUNT('noModificationsJanuary') # 10031
+
+
+# the sum of the Nomodifications January and the modifications January is 20000 , regularly should be 19999
+
+############## QUESTION 1.3 ###############################################
+
+overall_mails  <- as.data.frame(table(emails_sent$UserID,emails_sent$MonthID))
+colnames(overall_mails) <- c("UserID","Month","Mails_recieved")
+View(overall_mails)
+
+January_mails <- subset(overall_mails,overall_mails$Month==1)
+View(January_mails)
+February_mails <-subset(overall_mails,overall_mails$Month==2)
+View(February_mails)
+March_mails <- subset(overall_mails,overall_mails$Month==3)
+View(March_mails)
+
+for(i in 1:nrow(January_mails)) {
+  if (January_mails$Mails_recieved[i]>0){
+    r$SETBIT("EmailsJanuary",i, "1")}
+  
+}
+
+r$BITCOUNT("EmailsJanuary") # 9617
+
+for(i in 1:nrow(February_mails)) {
+  if (February_mails$Mails_recieved[i]>0){
+    r$SETBIT("EmailsFebruary",i, "1")}
+  
+}
+
+r$BITCOUNT("EmailsFebruary") #9666
+
+for(i in 1:nrow(March_mails)) {
+  if (March_mails$Mails_recieved[i]>0){
+    r$SETBIT("EmailsMarch",i, "1")}
+  
+}
+
+r$BITCOUNT("EmailsMarch") #9520
+
+
+r$BITOP("AND","One at least mail in 3 months",c("EmailsJanuary","EmailsFebruary","EmailsMarch")) #2001
+r$BITCOUNT("One at least mail in 3 months") #2668
+
+
+
+############### QUESTIONS 1.4 ########################################
+
+r$BITOP("AND","January_March",c("EmailsJanuary","EmailsMarch")) #2001
+
+r$BITOP("NOT","NotEmailsFebruary","EmailsFebruary") #2001
+
+r$BITOP("AND", "all_months_not_feb",c("NotEmailsFebruary","January_March")) #2001
+
+
+r$BITCOUNT("all_months_not_feb") #2417
+
+######################### QUESTION 1.5 ################################
+
+# first of all we need to see how many emails every user had received in January
+
+jan_received_email<-as.data.frame(table(emails_sent$UserID[emails_sent$MonthID==1],emails_sent$MonthID[emails_sent$MonthID==1]))
+colnames(jan_received_email)<-c("UserID","Month","How_many_Emails_Received")
+View(jan_received_email)
+jan_opened_email<-as.data.frame(table(emails_sent$UserID[emails_sent$EmailOpened==1],emails_sent$MonthID[emails_sent$EmailOpened==1]))
+colnames(jan_opened_email)<-c("UserID","Month","How_many_Emails_opened")
+View(jan_opened_email)
+
+january_total <- merge(jan_received_email,jan_opened_email,by=c("UserID","Month"),all.x=T)
+january_total$How_many_Emails_opened[is.na(january_total$How_many_Emails_opened)]<-0 # we make 0 the NA values.
+# Redis counts binary data so we will make the "opened emails" 1 for open 0 for not open.
+january_total$How_many_Emails_opened<-ifelse(january_total$How_many_Emails_opened>0,1,0)
+View(january_total)
+
+#When the emails have been opened Redis puts 1 else 0.
+for(i in 1:nrow(january_total))
+{
+  if(january_total$How_many_Emails_opened[i] == 1) 
+  {
+    r$SETBIT("EmailsOpenedJanuary",i,"1")
+  }
+}
+
+r$BITCOUNT("EmailsOpenedJanuary") # 5645
+
+
+r$BITOP("NOT","noEmailsOpenedJanuary","EmailsOpenedJanuary")
+# Now we have to compare the outcome of the "bitop" with the modifications in January to find how many updated their list.
+
+r$BITOP("AND","Update_but_didnt_opened", c("noEmailsOpenedJanuary","ModificationsJanuary"))
+
+r$BITCOUNT("Update_but_didnt_opened") # 2006
+
+
+
+############################### question 1.6 ###################################################
+
+############### FOR FEBRUARY ##################################################
+
+feb_received_email<-as.data.frame(table(emails_sent$UserID[emails_sent$MonthID==2],emails_sent$MonthID[emails_sent$MonthID==2]))
+colnames(feb_received_email)<-c("UserID","Month","How_many_Emails_Received")
+View(feb_received_email)
+feb_opened_email<-as.data.frame(table(emails_sent$UserID[emails_sent$EmailOpened==1],emails_sent$MonthID[emails_sent$EmailOpened==1]))
+colnames(feb_opened_email)<-c("UserID","Month","How_many_Emails_opened")
+View(feb_opened_email)
+
+feburary_total <- merge(feb_received_email,feb_opened_email,by=c("UserID","Month"),all.x=T)
+feburary_total$How_many_Emails_opened[is.na(feburary_total$How_many_Emails_opened)]<-0 # we make 0 the NA values 
+# redis count binary data so we will make the opened emails 1 for open 0 for not open 
+feburary_total$How_many_Emails_opened<-ifelse(feburary_total$How_many_Emails_opened>0,1,0)
+View(feburary_total)
+
+for (i in 1:nrow(feburary_total )){
+  if (feburary_total$How_many_Emails_opened[i]==1){
+    r$SETBIT("EmailsOpenedFebruary", i, "1")
+  }
+}
+
+r$BITCOUNT("EmailsOpenedFebruary") # 5721
+
+######################## FOR MARCH ####################################################
+
+mar_received_email<-as.data.frame(table(emails_sent$UserID[emails_sent$MonthID==3],emails_sent$MonthID[emails_sent$MonthID==3]))
+colnames(mar_received_email)<-c("UserID","Month","How_many_Emails_Received")
+View(mar_received_email)
+mar_opened_email<-as.data.frame(table(emails_sent$UserID[emails_sent$EmailOpened==1],emails_sent$MonthID[emails_sent$EmailOpened==1]))
+colnames(mar_opened_email)<-c("UserID","Month","How_many_Emails_opened")
+View(mar_opened_email)
+
+march_total <- merge(mar_received_email,mar_opened_email,by=c("UserID","Month"),all.x=T)
+march_total$How_many_Emails_opened[is.na(march_total$How_many_Emails_opened)]<-0 # we make 0 the NA values 
+# redis count binary data so we will make the opened emails 1 for open 0 for not open 
+march_total$How_many_Emails_opened<-ifelse(march_total$How_many_Emails_opened>0,1,0)
+View(march_total)
+
+for (i in 1:nrow(march_total)){
+  if (march_total$How_many_Emails_opened[i]==1){
+    r$SETBIT("EmailsOpenedMarch", i, "1")
+  }
+}
+
+r$BITCOUNT("EmailsOpenedMarch") # 5572
+
+########### USING THE SAME PROCEDURE WITH THE 1.5 , WE WILL COUNT THE EMAILS NOT OPENED IN MARCH AND IN FEBRUARY ###############
+
+
+r$BITOP("NOT","noEmailsOpenedFebruary", "EmailsOpenedFebruary") #1209
+r$BITOP("AND","Update_but_didnt_opened_Feb", c("noEmailsOpenedFebruary","ModificationsFebruary"))#2500
+r$BITCOUNT("Update_but_didnt_opened_Feb")#1981
+
+r$BITOP("NOT","noEmailsOpenedMarch", "EmailsOpenedMarch") #1190
+r$BITOP("AND","Update_but_didnt_opened_Mar", c("noEmailsOpenedMarch","ModificationsMarch")) #2500
+r$BITCOUNT("Update_but_didnt_opened_Mar") # 1941
+
+
+# finally with the Bitop OR we can compute the answer of the question 
+
+
+r$BITOP("OR","Total_mails_updated",c("Update_but_didnt_opened_Jan","Update_but_didnt_opened_Feb","Update_but_didnt_opened_Mar"))
+
+r$BITCOUNT("Total_mails_updated") # 3510
+
+
+########################## question 1.7 ####################################
+
+
+# in 1.6 we found out that 3510 users updated their list without open their mail . 
+#That means that they probably didint ever received an email or they updated their listing without even knowing about the suggestions 
+# of the company . So yes in order to keep these users totally informed about the new suggestions we have to keep sending them emails.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

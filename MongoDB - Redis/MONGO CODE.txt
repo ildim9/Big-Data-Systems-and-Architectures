@@ -1,0 +1,170 @@
+### QUESTION 2.1 #####
+
+
+library("mongolite")
+require(mongolite)
+require(rjson)
+
+library("jsonlite")
+require(jsonlite)
+
+### 2.1 ############
+
+#read file with paths of json files to a list
+library(readr)
+bikes_json <- read.csv2("C:\\Users\\elgr9\\OneDrive\\Desktop\\BIKES\\files_list.txt")
+
+
+
+# Open a connection to MongoDB,MongoAssignment is our Collection
+m <- mongo("MongoAssignment", url = "mongodb://localhost")
+ 
+#Cleaning Loop,The loop reads every json file and apply the proper transformations needed to implement the first 5 mandatory questions.
+for(i in 1:nrow(bikes_json)){
+  
+  
+  json_data <-fromJSON(bikes_json[i,]) #
+  
+  
+  
+  json_data$ad_data$Mileage <- gsub("km","",json_data$ad_data$Mileage) # removes the km from every Mileage Value
+  json_data$ad_data$Mileage <- gsub(",","",json_data$ad_data$Mileage) # also removes the , for every Mileage Value
+  json_data$ad_data$Mileage <- as.numeric(json_data$ad_data$Mileage) # Making Them numeric Variables
+  json_data$ad_data$Price  <- gsub("€","",json_data$ad_data$Price) # Removes the Euro symbol from the price 
+  json_data$ad_data$Price <- gsub("\\.","",json_data$ad_data$Price) # Removes the Dot symbol from price
+  json_data$ad_data$Power <- gsub(" bhp.*", "", json_data$ad_data$Power) # Removed the bhp symbol from Power
+  json_data$ad_data$Power <- as.numeric(json_data$ad_data$Power) # Making Power variable numeric 
+  
+  
+  if(json_data$ad_data$Price == "Askforprice") 
+  {
+
+    json_data$ad_data$Price  <- 0
+
+
+  }
+
+  json_data$ad_data$Price <- as.numeric(json_data$ad_data$Price) # Making the Price numeric variables 
+ 
+  
+  json_data <- toJSON(json_data,auto_unbox=TRUE)
+
+  m$insert(json_data)  # inserting the json data to our MongoDB collection called "Mongo Assignment" 
+  
+}
+
+
+############################# MONGO QUERIES #########################
+
+
+##################### 2.2 ####################
+
+
+db.MongoAssignment.count()
+
+
+####################### 2.3 ###################
+
+db.MongoAssignment.aggregate(
+  [ 
+  {
+      $match: {
+        "ad_data.Price" : {
+          $gte: 200
+        }
+      }
+    },
+    {
+      $group: {
+        "_id": "Price",
+        "num_of_listings": {
+          $sum : 1
+        },
+        "avg_Price": {
+          $avg: "$ad_data.Price"
+        }
+      }
+    }, 
+    {
+      $project: {
+        "_id": 1,
+        "num_of_listings": 1,
+        "avg_Price": {
+          $round : "$avg_Price"
+        }
+      }
+    }
+  ])
+####################### 2.4 ######################
+
+
+db.MongoAssignment.aggregate(
+  [
+    {
+      $match: {
+        "ad_data.Price" : {
+          $gt: 200
+        }
+      }
+    },
+    {
+      $group: {
+        "_id": null,
+        "min": {
+          $min: "$ad_data.Price"
+        }
+      }
+    }
+  ]
+)
+
+
+db.MongoAssignment.aggregate([
+   {
+     $group : {
+      "_id" : null, 
+       "max_price": {
+         $max : "$ad_data.Price"
+       }
+    }
+   }])
+
+
+######################## 2.5 ####################### 
+
+db.getCollection("MongoAssignment").find({"metadata.model":{$regex : "Negotiable"}}).count()
+
+
+######################## 2.7 ##############################
+
+
+db.MongoAssignment.aggregate(
+  [
+  {
+      "$match": {
+      "ad_data.Price": { 
+      "$gte": 200 }
+      }
+  },
+  {
+    "$group":
+      {
+          "_id": "$metadata.brand", "Average_Price":{"$avg":"$ad_data.Price"}}},
+          
+  { "$sort": {
+          "Average_Price": -1}}
+  ]
+)                     
+
+
+
+
+
+####################### 2.9 ####################
+
+db.MongoAssignment.find({"extras":{$regex : "ABS"}}).count() 
+
+
+
+
+
